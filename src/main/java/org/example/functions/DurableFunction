@@ -1,0 +1,48 @@
+import java.util.Optional;
+
+import com.microsoft.azure.functions.*;
+import com.microsoft.azure.functions.annotation.*;
+
+import com.microsoft.durabletask.*;
+import com.microsoft.durabletask.azurefunctions.*;
+
+public class DurableFunctionsSample {
+    /**
+     * This HTTP-triggered function starts the orchestration.
+     */
+    @FunctionName("StartHelloCities")
+    public HttpResponseMessage startHelloCities(
+            @HttpTrigger(name = "req", methods = {HttpMethod.POST}) HttpRequestMessage<Optional<String>> req,
+            @DurableClientInput(name = "durableContext") DurableClientContext durableContext,
+            final ExecutionContext context) {
+
+        DurableTaskClient client = durableContext.getClient();
+        String instanceId = client.scheduleNewOrchestrationInstance("HelloCities");
+        context.getLogger().info("Created new Java orchestration with instance ID = " + instanceId);
+        return durableContext.createCheckStatusResponse(req, instanceId);
+    }
+
+    /**
+     * This is the orchestrator function, which can schedule activity functions, create durable timers,
+     * or wait for external events in a way that's completely fault-tolerant. The OrchestrationRunner.loadAndRun()
+     * static method is used to take the function input and execute the orchestrator logic.
+     */
+    @FunctionName("HelloCities")
+    public String helloCitiesOrchestrator(@DurableOrchestrationTrigger(name = "runtimeState") String runtimeState) {
+        return OrchestrationRunner.loadAndRun(runtimeState, ctx -> {
+            String result = "";
+            result += ctx.callActivity("SayHello", "Tokyo", String.class).await() + ", ";
+            result += ctx.callActivity("SayHello", "London", String.class).await() + ", ";
+            result += ctx.callActivity("SayHello", "Seattle", String.class).await();
+            return result;
+        });
+    }
+
+    /**
+     * This is the activity function that gets invoked by the orchestrator function.
+     */
+    @FunctionName("SayHello")
+    public String sayHello(@DurableActivityTrigger(name = "name") String name) {
+        return String.format("Hello %s!", name);
+    }
+}
